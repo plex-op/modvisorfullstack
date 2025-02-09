@@ -10,9 +10,10 @@ const mongoose = require('mongoose'); // Import Mongoose
 dotenv.config(); // Load environment variables
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .catch((err) => console.error('MongoDB connection error:', err));
 
 // Define a schema for the form submissions
 const submissionSchema = new mongoose.Schema({
@@ -22,7 +23,7 @@ const submissionSchema = new mongoose.Schema({
   subject: String,
   message: String,
   resume: String, // We'll store the file path here
-  submittedAt: { type: Date, default: Date.now }
+  submittedAt: { type: Date, default: Date.now },
 });
 const Submission = mongoose.model('Submission', submissionSchema);
 
@@ -43,10 +44,20 @@ if (!fs.existsSync(uploadPath)) {
 const storage = multer.diskStorage({
   destination: uploadPath,
   filename: (req, file, cb) => {
-    cb(null, file.originalname);
+    cb(null, Date.now() + '-' + file.originalname); // Add timestamp to avoid conflicts
   },
 });
-const upload = multer({ storage: storage });
+const upload = multer({
+  storage: storage,
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (!allowedTypes.includes(file.mimetype)) {
+      return cb(new Error('Only .pdf, .doc, and .docx files are allowed'));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+});
 
 // Set up Nodemailer transporter
 const transporter = nodemailer.createTransport({
@@ -82,7 +93,7 @@ app.post('/api/submit-form', upload.single('resume'), async (req, res) => {
     console.log('Submission saved to MongoDB.');
   } catch (err) {
     console.error('Error saving submission:', err);
-    // You might choose to handle the error further here (e.g., return a response)
+    return res.status(500).json({ message: 'Error saving submission to database', error: err.message });
   }
 
   // Email options
